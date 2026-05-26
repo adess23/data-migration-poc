@@ -17,14 +17,16 @@ REST API + ETL pipeline to migrate CSV data from Azure Blob Storage to Snowflake
 | POST | /api/v1/insert | Batch insert (1-1000 rows) |
 | POST | /api/v1/backup/{table} | Backup table to AVRO |
 | POST | /api/v1/restore/{table}/{file} | Restore table from AVRO |
+| GET | /api/v1/employees-by-quarter | Restore table from AVRO |
+| GET | /api/v1/departments-greaterThan-mean | Restore table from AVRO |
 
 ## Auth
-All endpoints require header: `x-api-key: your_key`
+All endpoints require header: `x-api-key: apikeyclave`
+All POST endpoints require : `Content-Type: application/json` 
 
 ## Run locally
 ```bash
 pip install -r requirements.txt
-uvicorn main:app --reload
 ```
 
 ## Run with Docker
