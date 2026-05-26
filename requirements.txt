@@ -1,0 +1,6 @@
+flask
+snowflake-connector-python
+azure-storage-blob
+pandas
+fastavro
+python-dotenv
