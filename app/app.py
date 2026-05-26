@@ -5,6 +5,7 @@ from db import get_conn
 
 load_dotenv()
 os.makedirs("logs", exist_ok=True)
+os.makedirs("backups", exist_ok=True)
 
 app = Flask(__name__)
 API_KEY = os.getenv("API_KEY")
@@ -15,7 +16,7 @@ logging.basicConfig(
     format="%(asctime)s | %(message)s"
 )
 
-# ---------- auth ----------
+# ---------- API KEY authorization ----------
 def check_key():
     if request.headers.get("x-api-key") != API_KEY:
         return jsonify({"error": "Unauthorized"}), 401
@@ -46,7 +47,7 @@ def validate_row(table, row):
 
     return errors
 
-# ---------- insert ----------
+# ---------- insert statement ----------
 INSERT_SQL = {
     "departments":     "INSERT INTO departments (id, department) VALUES (%s, %s)",
     "jobs":            "INSERT INTO jobs (id, job) VALUES (%s, %s)",
@@ -95,7 +96,7 @@ def process_batch(table, rows):
 
     return {"inserted": inserted, "rejected": len(rejected), "details": rejected}
 
-# ---------- routes ----------
+# ---------- endpoints ----------
 @app.route("/health")
 def health():
     return jsonify({"status": "ok"})
@@ -123,6 +124,28 @@ def load_historic():
 
     from load_historic import run
     return jsonify(run())
+
+@app.route("/api/v1/backup/<table>", methods=["POST"])
+def backup(table):
+    err = check_key()
+    if err: return err
+
+    if table not in ("departments", "jobs", "hired_employees"):
+        return jsonify({"error": "Invalid table"}), 400
+
+    from backup_restore import backup_table
+    return jsonify(backup_table(table))
+
+@app.route("/api/v1/restore/<table>/<backup_file>", methods=["POST"])
+def restore(table, backup_file):
+    err = check_key()
+    if err: return err
+
+    from backup_restore import restore_table
+    try:
+        return jsonify(restore_table(table, backup_file))
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
 
 if __name__ == "__main__":
     app.run(debug=True, port=8000)
