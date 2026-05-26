@@ -3,3 +3,4 @@ venv/
 *.db
 logs/
 backups/
+__pycache__

@@ -96,7 +96,10 @@ def process_batch(table, rows):
 
     return {"inserted": inserted, "rejected": len(rejected), "details": rejected}
 
-# ---------- endpoints ----------
+# ============================================
+# CHALLENGE 1 — Data Loading Endpoints
+# ============================================
+
 @app.route("/health")
 def health():
     return jsonify({"status": "ok"})
@@ -146,6 +149,76 @@ def restore(table, backup_file):
         return jsonify(restore_table(table, backup_file))
     except FileNotFoundError as e:
         return jsonify({"error": str(e)}), 404
+    
+# ============================================
+# CHALLENGE 2 — Analytics Endpoints
+# ============================================
+
+@app.route("/api/v1/employees-by-quarter", methods=["GET"])
+def employees_by_quarter():
+    err = check_key()
+    if err: return err
+
+    conn = get_conn()
+    cur  = conn.cursor()
+
+    cur.execute("""
+        SELECT
+            d.department,
+            j.job,
+            SUM(CASE WHEN QUARTER(TO_TIMESTAMP(e.datetime)) = 1 THEN 1 ELSE 0 END) AS Q1,
+            SUM(CASE WHEN QUARTER(TO_TIMESTAMP(e.datetime)) = 2 THEN 1 ELSE 0 END) AS Q2,
+            SUM(CASE WHEN QUARTER(TO_TIMESTAMP(e.datetime)) = 3 THEN 1 ELSE 0 END) AS Q3,
+            SUM(CASE WHEN QUARTER(TO_TIMESTAMP(e.datetime)) = 4 THEN 1 ELSE 0 END) AS Q4
+        FROM hired_employees e
+        JOIN departments d ON e.department_id = d.id
+        JOIN jobs        j ON e.job_id        = j.id
+        WHERE YEAR(TO_TIMESTAMP(e.datetime)) = 2021
+        GROUP BY d.department, j.job
+        ORDER BY d.department, j.job
+    """)
+
+    rows = [
+        {"department": r[0], "job": r[1], "Q1": r[2], "Q2": r[3], "Q3": r[4], "Q4": r[5]}
+        for r in cur.fetchall()
+    ]
+    cur.close()
+    conn.close()
+    return jsonify(rows)
+
+
+@app.route("/api/v1/departments-greaterThan-mean", methods=["GET"])
+def departments_above_mean():
+    err = check_key()
+    if err: return err
+
+    conn = get_conn()
+    cur  = conn.cursor()
+
+    cur.execute("""
+        WITH hires_per_dept AS (
+            SELECT
+                d.id,
+                d.department,
+                COUNT(*) AS hired
+            FROM hired_employees e
+            JOIN departments d ON e.department_id = d.id
+            WHERE YEAR(TO_TIMESTAMP(e.datetime)) = 2021
+            GROUP BY d.id, d.department
+        )
+        SELECT id, department, hired
+        FROM hires_per_dept
+        WHERE hired > (SELECT AVG(hired) FROM hires_per_dept)
+        ORDER BY hired DESC
+    """)
+
+    rows = [
+        {"id": r[0], "department": r[1], "hired": r[2]}
+        for r in cur.fetchall()
+    ]
+    cur.close()
+    conn.close()
+    return jsonify(rows)    
 
 if __name__ == "__main__":
     app.run(debug=True, port=8000)
