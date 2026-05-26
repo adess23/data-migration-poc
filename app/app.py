@@ -1,20 +1,32 @@
 import os, json, re, logging, math
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
-from db import get_conn
+from core.db import get_conn
 
 load_dotenv()
 os.makedirs("logs", exist_ok=True)
 os.makedirs("backups", exist_ok=True)
 
-app = Flask(__name__)
 API_KEY = os.getenv("API_KEY")
+app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024  # 2MB max payload
 
 logging.basicConfig(
     filename="logs/rejected.log",
     level=logging.WARNING,
     format="%(asctime)s | %(message)s"
 )
+
+# ---- global error handler ----
+@app.errorhandler(Exception)
+def handle_exception(e):
+    logging.error(f"Unhandled error: {str(e)}")
+    return jsonify({"error": "Internal server error"}), 500
+
+@app.errorhandler(413)
+def payload_too_large(e):
+    return jsonify({"error": "Payload too large. Max 2MB"}), 413
+
 
 # ---------- API KEY authorization ----------
 def check_key():
@@ -109,6 +121,9 @@ def insert():
     err = check_key()
     if err: return err
 
+    if not request.is_json:
+        return jsonify({"error": "Content-Type must be application/json"}), 415
+    
     body = request.get_json()
     table = body.get("table", "")
     rows  = body.get("rows", [])
@@ -125,7 +140,10 @@ def load_historic():
     err = check_key()
     if err: return err
 
-    from load_historic import run
+    if not request.is_json:
+        return jsonify({"error": "Content-Type must be application/json"}), 415    
+
+    from services.load_historic import run
     return jsonify(run())
 
 @app.route("/api/v1/backup/<table>", methods=["POST"])
@@ -133,10 +151,13 @@ def backup(table):
     err = check_key()
     if err: return err
 
+    if not request.is_json:
+        return jsonify({"error": "Content-Type must be application/json"}), 415    
+
     if table not in ("departments", "jobs", "hired_employees"):
         return jsonify({"error": "Invalid table"}), 400
 
-    from backup_restore import backup_table
+    from services.backup_restore import backup_table
     return jsonify(backup_table(table))
 
 @app.route("/api/v1/restore/<table>/<backup_file>", methods=["POST"])
@@ -144,7 +165,10 @@ def restore(table, backup_file):
     err = check_key()
     if err: return err
 
-    from backup_restore import restore_table
+    if not request.is_json:
+        return jsonify({"error": "Content-Type must be application/json"}), 415    
+
+    from services.backup_restore import restore_table
     try:
         return jsonify(restore_table(table, backup_file))
     except FileNotFoundError as e:
@@ -221,4 +245,6 @@ def departments_above_mean():
     return jsonify(rows)    
 
 if __name__ == "__main__":
-    app.run(debug=True, port=8000)
+    #app.run(debug=True, port=8000)
+    debug_mode = os.getenv("FLASK_DEBUG", "0") == "1"
+    app.run(host="0.0.0.0", port=8000, debug=debug_mode)    
